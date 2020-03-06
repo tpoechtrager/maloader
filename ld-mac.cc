@@ -176,6 +176,7 @@ static const int BITS = 32;
 #endif
 
 static char* g_darwin_executable_path;
+static char* g_darwin_rpath;
 
 static Timer g_timer;
 
@@ -236,15 +237,13 @@ static void dumpInt(int bound_name_id) {
 static MachO* loadDylib(string dylib) {
   static const char executable_str[] = "@executable_path";
   static const size_t executable_str_len = strlen(executable_str);
+  static const char rpath_str[] = "@rpath";
+  static const size_t rpath_str_len = strlen(rpath_str);
+
   if (!strncmp(dylib.c_str(), executable_str, executable_str_len)) {
-    string dir = g_darwin_executable_path;
-    size_t found = dir.rfind('/');
-    if (found == string::npos) {
-      dir = ".";
-    } else {
-      dir = dir.substr(0, found);
-    }
-    dylib.replace(0, executable_str_len, dir);
+    dylib.replace(0, executable_str_len, g_darwin_executable_path);
+  } else if (!strncmp(dylib.c_str(), rpath_str, rpath_str_len)) {
+    dylib.replace(0, rpath_str_len, g_darwin_rpath);
   }
 
   return MachO::read(dylib.c_str(), ARCH_NAME);
@@ -1065,10 +1064,16 @@ int main(int argc, char* argv[], char* envp[]) {
     argv++;
   }
 
-  g_darwin_executable_path =
-      (char*)dlsym(RTLD_DEFAULT, "__darwin_executable_path");
-  if (!realpath(argv[0], g_darwin_executable_path)) {
+  char path_tmp[4096];
+
+  if (!realpath(argv[0], path_tmp)) {
   }
+
+  *strrchr(path_tmp, '/') = '\0';
+  g_darwin_executable_path = strdup(path_tmp);
+
+  snprintf(path_tmp, sizeof(path_tmp) - 1, "%s/../lib/", g_darwin_executable_path);
+  g_darwin_rpath = strdup(path_tmp);
 
   unique_ptr<MachO> mach(MachO::read(argv[0], ARCH_NAME));
 #ifdef __x86_64__
